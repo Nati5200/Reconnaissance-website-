@@ -1,0 +1,55 @@
+#!/bin/bash 
+read -p "enter your URL:" url
+if [ ! -d "$url" ];then
+        mkdir $url
+fi
+
+if [ ! -d "$url/recon" ];then
+        mkdir $url/recon
+fi
+
+if [ ! -d "$url/recon/final" ];then
+        mkdir $url/recon/final
+fi
+
+echo "[+] Enumerating subdomains with Subfinder..."
+subfinder -d $url >> $url/recon/subfinder.txt
+cat $url/recon/subfinder.txt >> $url/recon/final/final.txt
+echo "[+] Subfinder found $(wc -l < "$url/recon/subfinder.txt") subdomains"
+
+echo "[+] Enumerating subdomains with Amass..."
+timeout 120s amass enum -d $url >> $url/recon/Amass.txt
+cat $url/recon/Amass.txt >> $url/recon/final/final.txt
+echo "[+] Amass found $(wc -l < "$url/recon/Amass.txt") subdomains"
+
+echo "[+] Enumerating subdomains with Assetfinder..."
+assetfinder --subs-only $url >> $url/recon/Assetfinder.txt
+cat $url/recon/Assetfinder.txt >> $url/recon/final/final.txt
+echo "[+] Assetfinder found $(wc -l < "$url/recon/Assetfinder.txt") subdomains"
+
+echo "[+] Deleting all the MF's duplicates..."
+sort $url/recon/final/final.txt | uniq > $url/recon/final/sorted_final.txt
+echo "[+] Unique subdomains after merge: $(wc -l < "$url/recon/final/sorted_final.txt")"
+
+
+echo "[+] Checking Live domains..."
+cat $url/recon/final/sorted_final.txt | httprobe --prefer-https >> $url/recon/final/live_domains.txt
+echo "[+] Live domains found: $(wc -l < "$url/recon/final/live_domains.txt")"
+
+
+echo "[+] Downloading all images from live domains..."
+
+while IFS= read -r domain; do
+    echo "Downloading images from: $domain"
+    
+    safe_domain=$(echo "$domain" | sed 's|https\?://||' | sed 's/[^a-zA-Z0-9._-]/_/g')
+    target_dir="$url/recon/final/downloaded_images/$safe_domain"
+    mkdir -p "$target_dir"
+
+ wget -r -l1 -H -t1 -nd -N -np -A jpg,jpeg,png,gif,svg -erobots=off -P "$target_dir" "$domain"
+count=$(find "$target_dir" -type f | wc -l)
+ echo "[+] $domain - Downloaded $count images"
+done < "$url/recon/final/live_domains.txt"
+
+echo "[+] All images downloaded to $url/recon/final/downloaded_images"
+echo "[+] DONE [+]"
